@@ -1,0 +1,643 @@
+<?xml version="1.0" encoding="UTF-8"?><sqlb_project><db path="C:/Users/folap/OneDrive/Desktop/sql/clinic_db.sqlite3" readonly="0" foreign_keys="1" case_sensitive_like="0" temp_store="0" wal_autocheckpoint="1000" synchronous="2"/><attached/><window><main_tabs open="structure browser pragmas query" current="1"/></window><tab_structure><column_width id="0" width="300"/><column_width id="1" width="0"/><column_width id="2" width="100"/><column_width id="3" width="5634"/><column_width id="4" width="0"/><expanded_item id="0" parent="1"/><expanded_item id="1" parent="1"/><expanded_item id="2" parent="1"/><expanded_item id="3" parent="1"/></tab_structure><tab_browse><table title="Patient" custom_title="0" dock_id="5" table="4,7:mainPatient"/><dock_state state="000000ff00000000fd00000001000000020000033b00000226fc0100000003fb000000160064006f0063006b00420072006f007700730065003101000000000000033b0000000000000000fb000000160064006f0063006b00420072006f007700730065003401000000000000033b0000000000000000fb000000160064006f0063006b00420072006f007700730065003501000000000000033b0000012400ffffff0000033b0000000000000004000000040000000800000008fc00000000"/><default_encoding codec=""/><browse_table_settings><table schema="main" name="Appointment" show_row_id="0" encoding="" plot_x_axis="" unlock_view_pk="_rowid_" freeze_columns="0"><sort/><column_widths><column index="1" value="96"/><column index="2" value="67"/><column index="3" value="56"/><column index="4" value="69"/><column index="5" value="67"/><column index="6" value="96"/><column index="7" value="96"/><column index="8" value="78"/><column index="9" value="84"/><column index="10" value="249"/></column_widths><filter_values/><conditional_formats/><row_id_formats/><display_formats/><hidden_columns/><plot_y_axes/><global_filter/></table><table schema="main" name="Patient" show_row_id="0" encoding="" plot_x_axis="" unlock_view_pk="_rowid_" freeze_columns="0"><sort/><column_widths><column index="1" value="65"/><column index="2" value="78"/><column index="3" value="85"/><column index="4" value="85"/><column index="5" value="54"/><column index="6" value="257"/><column index="7" value="92"/><column index="8" value="101"/><column index="9" value="171"/><column index="10" value="103"/><column index="11" value="116"/><column index="12" value="105"/><column index="13" value="107"/></column_widths><filter_values/><conditional_formats/><row_id_formats/><display_formats/><hidden_columns/><plot_y_axes/><global_filter/></table></browse_table_settings></tab_browse><tab_sql><sql name="SQL 1">PRAGMA foreign_keys = ON;
+CREATE TABLE Clinic (
+    clinic_id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    clinic_name TEXT NOT NULL,
+
+    -- Address stored as composite attributes
+    street TEXT NOT NULL,
+    city TEXT NOT NULL,
+    postcode TEXT NOT NULL,
+
+    neighbourhood TEXT NOT NULL,
+
+    phone_number TEXT,
+    email TEXT,
+
+    opening_time TEXT NOT NULL,
+    closing_time TEXT NOT NULL,
+
+    -- 1 = active, 0 = inactive
+    is_active INTEGER NOT NULL DEFAULT 1
+        CHECK(is_active IN (0,1))
+);
+
+CREATE TABLE HealthcareWorker(
+    worker_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    first_name TEXT NOT NULL,
+    last_name TEXT NOT NULL,
+    email TEXT,
+    phone_number TEXT,
+    role TEXT NOT NULL CHECK(role IN ('Doctor','Nurse','Pharmacist')),
+    licence_number TEXT NOT NULL UNIQUE, --professional licence numbers must be unique
+    --1 is active 0 is inactive
+    is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1))
+);
+
+CREATE TABLE Patient (
+    patient_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    primary_clinic_id INTEGER NOT NULL,
+    first_name TEXT NOT NULL,
+    last_name TEXT NOT NULL,
+    date_of_birth TEXT NOT NULL,
+    gender TEXT NOT NULL CHECK(gender IN ('Male','Female','Non-binary','Prefer not to say')),
+    street TEXT NOT NULL,
+    city TEXT NOT NULL,
+    postcode TEXT NOT NULL,
+    neighbourhood TEXT NOT NULL,
+    email TEXT,
+    phone_number TEXT,
+    insurance_status TEXT NOT NULL CHECK(insurance_status IN ('Insured','Uninsured','Not Disclosed')),
+    insurance_provider TEXT,
+    registration_date TEXT NOT NULL,
+    emergency_contact_name TEXT,
+    emergency_contact_number TEXT,
+    FOREIGN KEY (primary_clinic_id) REFERENCES Clinic(clinic_id)
+);
+
+CREATE TABLE ClinicWorker (
+    worker_id INTEGER NOT NULL,
+    clinic_id INTEGER NOT NULL,
+    start_date TEXT NOT NULL,
+    end_date TEXT,
+    is_primary_clinic INTEGER NOT NULL DEFAULT 0 CHECK(is_primary_clinic IN (0,1)),
+    -- composite primary key: one worker can be assigned to many clinics
+    PRIMARY KEY (worker_id, clinic_id),
+    FOREIGN KEY (worker_id) REFERENCES HealthcareWorker(worker_id),
+    FOREIGN KEY (clinic_id) REFERENCES Clinic(clinic_id)
+);
+
+CREATE TABLE Vaccine (
+    vaccine_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vaccine_name TEXT NOT NULL,
+    manufacturer TEXT NOT NULL,
+    brand_name TEXT, -- commercial product name e.g. Comirnaty, Spikevax
+    dose_count_required INTEGER NOT NULL CHECK(dose_count_required &gt;= 1),
+    dose_interval_days INTEGER, -- NULL for single-dose vaccines
+    dose_ml REAL NOT NULL CHECK(dose_ml &gt; 0),
+    -- temperature stored as range not fixed value (resolves R3 ambiguity)
+    storage_temp_min REAL NOT NULL,
+    storage_temp_max REAL NOT NULL,
+    -- shelf_life is general; actual expiry tracked per batch in VaccineBatch
+    shelf_life_days INTEGER NOT NULL CHECK(shelf_life_days &gt; 0),
+    is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)) -- 1=active, 0=discontinued
+);
+
+CREATE TABLE VaccineBatch (
+    batch_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vaccine_id INTEGER NOT NULL, -- links to vaccine type
+    clinic_id INTEGER NOT NULL, -- clinic holding this physical stock
+    batch_number TEXT NOT NULL UNIQUE,
+    manufacture_date TEXT NOT NULL,
+    expiry_date TEXT NOT NULL, -- tracked per batch, not per vaccine type
+    quantity_received INTEGER NOT NULL CHECK(quantity_received &gt; 0),
+    quantity_remaining INTEGER NOT NULL CHECK(quantity_remaining &gt;= 0),
+    received_date TEXT NOT NULL,
+    storage_location TEXT, -- e.g. Fridge 2, Shelf B
+    FOREIGN KEY (vaccine_id) REFERENCES Vaccine(vaccine_id),
+    FOREIGN KEY (clinic_id) REFERENCES Clinic(clinic_id),
+    -- ensures remaining stock never exceeds what was received
+    CHECK (quantity_remaining &lt;= quantity_received)
+);
+
+CREATE TABLE Appointment (
+    appointment_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_id INTEGER NOT NULL,
+    clinic_id INTEGER NOT NULL,
+    vaccine_id INTEGER NOT NULL,
+    worker_id INTEGER NOT NULL,
+    appointment_date TEXT NOT NULL,
+    appointment_time TEXT NOT NULL,
+    appointment_status TEXT NOT NULL DEFAULT 'Scheduled' 
+	--restricts status to four valid values matching real clinical workflow
+    CHECK(appointment_status IN ('Scheduled','Completed','Cancelled','No-show')),
+    note TEXT, -- optional free-text notes
+    FOREIGN KEY (patient_id) REFERENCES Patient(patient_id),
+    FOREIGN KEY (clinic_id) REFERENCES Clinic(clinic_id),
+    FOREIGN KEY (vaccine_id) REFERENCES Vaccine(vaccine_id),
+    FOREIGN KEY (worker_id) REFERENCES HealthcareWorker(worker_id)
+);
+
+CREATE TABLE VaccinationRecord (
+    record_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_id INTEGER NOT NULL,
+    vaccine_id INTEGER NOT NULL,
+    batch_id INTEGER NOT NULL, -- tracks exact batch for safety/recall purposes
+    worker_id INTEGER NOT NULL, -- healthcare worker who administered the dose
+    clinic_id INTEGER NOT NULL, -- may differ from patient's primary clinic (walk-ins)
+    appointment_id INTEGER, -- nullable: walk-ins have no prior appointment
+    administered_date TEXT NOT NULL,
+    administered_time TEXT NOT NULL,
+    dose_number INTEGER NOT NULL DEFAULT 1 CHECK(dose_number &gt;= 1),
+    site_of_injection TEXT CHECK(site_of_injection IN 
+        ('Left arm','Right arm','Left thigh','Right thigh')),
+    adverse_reaction TEXT,
+    next_dose_due TEXT,
+    FOREIGN KEY (patient_id) REFERENCES Patient(patient_id),
+    FOREIGN KEY (vaccine_id) REFERENCES Vaccine(vaccine_id),
+    FOREIGN KEY (batch_id) REFERENCES VaccineBatch(batch_id),
+    FOREIGN KEY (worker_id) REFERENCES HealthcareWorker(worker_id),
+    FOREIGN KEY (clinic_id) REFERENCES Clinic(clinic_id),
+    FOREIGN KEY (appointment_id) REFERENCES Appointment(appointment_id)
+);
+
+CREATE TABLE ImmunizationReport (
+    report_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    clinic_id INTEGER NOT NULL,
+    report_date TEXT NOT NULL,
+    reporting_period TEXT NOT NULL 
+        CHECK(reporting_period IN ('Monthly','Quarterly','Annual')),
+    total_vaccinations INTEGER NOT NULL DEFAULT 0,
+    total_patients INTEGER NOT NULL DEFAULT 0,
+    -- coverage = total_vaccinations / total_patients * 100
+    coverage_percentage REAL CHECK(coverage_percentage BETWEEN 0 AND 100),
+    generated_by INTEGER, -- FK to HealthcareWorker who triggered the report
+    FOREIGN KEY (clinic_id) REFERENCES Clinic(clinic_id),
+    FOREIGN KEY (generated_by) REFERENCES HealthcareWorker(worker_id)
+);
+
+
+
+-- ============================================================
+-- SAMPLE DATA INSERTION
+-- 6 community health clinics serving underserved neighbourhoods
+-- in the Thurrock area, Essex (aligned with SDG 3)
+-- ============================================================
+
+INSERT INTO Clinic (clinic_name, street, city, postcode, neighbourhood, phone_number, email, opening_time, closing_time, is_active) VALUES
+('South Ockendon Health Centre', 'Darenth Lane', 'South Ockendon', 'RM15 5LP', 'South Ockendon', '01708000009', 'sockendon@nelft.nhs.uk', '08:00', '18:00', 1),
+('Purfleet Care Centre', 'Tank Hill Road', 'Purfleet', 'RM19 1SX', 'Purfleet', '01708000002', 'purfleet@nelft.nhs.uk', '08:00', '17:00', 1),
+('Orsett Minor Injury Unit', 'Rowley Road', 'Grays', 'RM16 3EU', 'Orsett', '01708000003', 'orsett@nelft.nhs.uk', '08:30', '17:30', 1),
+('Thurrock Health Centre', '55-57 High Street', 'Grays', 'RM17 6NB', 'Thurrock', '01708000004', 'thurrock@nelft.nhs.uk', '08:00', '18:00', 1),
+('Grays Health Centre', 'Brooke Road', 'Grays', 'RM17 5BY', 'Grays', '01708000008', 'grays@nelft.nhs.uk', '08:00', '17:00', 1),
+('Tilbury Community Health Centre', 'Civic Square', 'Tilbury', 'RM18 8AD', 'Tilbury', '01708000006', 'tilbury@nelft.nhs.uk', '08:30', '18:30', 1);
+
+-- 15 HealthcareWorkers:it comprises of doctors, nurses and pharmacists
+INSERT INTO HealthcareWorker (first_name, last_name, email, phone_number, role, licence_number, is_active) VALUES
+('James', 'Okafor', 'j.okafor@nelft.nhs.uk', '07700100001', 'Doctor', 'GMC1001', 1),
+('Kemi', 'Fasola', 'k.fasola@nelft.nhs.uk', '07700100002', 'Nurse', 'NMC2001', 1),
+('Michael', 'Thompson', 'm.thompson@nelft.nhs.uk', '07700100003', 'Pharmacist', 'GPhC3001', 1),
+('Amina', 'Hassan', 'a.hassan@nelft.nhs.uk', '07700100004', 'Nurse', 'NMC2002', 1),
+('David', 'Chen', 'd.chen@nelft.nhs.uk', '07700100005', 'Doctor', 'GMC1002', 1),
+('Grace', 'Adeyemi', 'g.adeyemi@nelft.nhs.uk', '07700100006', 'Nurse', 'NMC2003', 1),
+('Ann', 'Robert', 'a.roberet@nelft.nhs.uk', '07700100007', 'Doctor', 'GMC1003', 1),
+('Fatima', 'Adam', 'f.adam@nelft.nhs.uk', '07700100008', 'Pharmacist', 'GPhC3002', 1),
+('John', 'Williams', 'j.williams@nelft.nhs.uk', '07700100009', 'Nurse', 'NMC2004', 1),
+('Priya', 'Sharma', 'p.sharma@nelft.nhs.uk', '07700100010', 'Doctor', 'GMC1004', 1),
+('Emmanuel', 'Osei', 'e.osei@nelft.nhs.uk', '07700100011', 'Nurse', 'NMC2005', 1),
+('Lucy', 'Martinez', 'l.martinez@nelft.nhs.uk', '07700100012', 'Pharmacist', 'GPhC3003', 1),
+('Ahmed', 'Ibrahim', 'a.ibrahim@nelft.nhs.uk', '07700100013', 'Doctor', 'GMC1005', 1),
+('Claire', 'Johnson', 'c.johnson@nelft.nhs.uk', '07700100014', 'Nurse', 'NMC2006', 1),
+('Ola', 'Lanre', 'o.lanre@nelft.nhs.uk', '07700100015', 'Doctor', 'GMC1006', 1);
+
+
+-- Assigning healthcare workers to clinics
+-- Some of the healthcareworkers works in multiple clinics (many-to-many relationship)
+INSERT INTO ClinicWorker (worker_id, clinic_id, start_date, end_date, is_primary_clinic) VALUES
+(1, 1, '2023-01-01', NULL, 1),  -- James Okafor primary at clinic 1
+(1, 2, '2023-06-01', NULL, 0),  -- James Okafor also covers clinic 2
+(2, 1, '2023-01-01', NULL, 1),  -- Kemi Fasola primary at clinic 1
+(3, 2, '2023-01-01', NULL, 1),  -- Michael Thompson primary at clinic 2
+(4, 2, '2023-02-01', NULL, 1),  -- Amina Hassan primary at clinic 2
+(4, 3, '2023-07-01', NULL, 0),  -- Amina Hassan also covers clinic 3
+(5, 3, '2023-01-01', NULL, 1),  -- David Chen primary at clinic 3
+(6, 3, '2023-01-01', NULL, 1),  -- Grace Adeyemi primary at clinic 3
+(7, 4, '2023-01-01', NULL, 1),  -- Ann Robert primary at clinic 4
+(8, 4, '2023-03-01', NULL, 1),  -- Fatima Adam primary at clinic 4
+(9, 4, '2023-01-01', NULL, 1),  -- John Williams primary at clinic 4
+(9, 5, '2023-08-01', NULL, 0),  -- John Williams also covers clinic 5
+(10, 5, '2023-01-01', NULL, 1), -- Priya Sharma primary at clinic 5
+(11, 5, '2023-01-01', NULL, 1), -- Emmanuel Osei primary at clinic 5
+(12, 6, '2023-01-01', NULL, 1), -- Lucy Martinez primary at clinic 6
+(13, 6, '2023-01-01', NULL, 1), -- Ahmed Ibrahim primary at clinic 6
+(13, 1, '2023-09-01', NULL, 0), -- Ahmed Ibrahim also covers clinic 1
+(14, 6, '2023-02-01', NULL, 1), -- Claire Johnson primary at clinic 6
+(15, 5, '2023-01-01', NULL, 1), -- Ola Lanre primary at clinic 5
+(15, 6, '2023-06-01', NULL, 0); -- Ola Lanre also covers clinic 6
+
+-- 22 vaccine types covering common immunisation programmes
+INSERT INTO Vaccine (vaccine_name, manufacturer, brand_name, dose_count_required, dose_interval_days, dose_ml, storage_temp_min, storage_temp_max, shelf_life_days, is_active) VALUES
+('Influenza', 'Sanofi', 'Fluzone', 1, NULL, 0.5, 2.0, 8.0, 365, 1),
+('COVID-19 mRNA', 'Pfizer-BioNTech', 'Comirnaty', 2, 21, 0.3, -90.0, -60.0, 180, 1),
+('COVID-19 mRNA', 'Moderna', 'Spikevax', 2, 28, 0.5, -25.0, -15.0, 180, 1),
+('MMR', 'Merck', 'MMR II', 2, 28, 0.5, 2.0, 8.0, 730, 1),
+('Hepatitis B', 'GSK', 'Engerix-B', 3, 30, 1.0, 2.0, 8.0, 540, 1),
+('Hepatitis A', 'GSK', 'Havrix', 2, 180, 1.0, 2.0, 8.0, 365, 1),
+('Tetanus', 'Sanofi', 'Tenivac', 1, NULL, 0.5, 2.0, 8.0, 730, 1),
+('Meningococcal', 'Pfizer', 'Nimenrix', 1, NULL, 0.5, 2.0, 8.0, 365, 1),
+('HPV', 'Merck', 'Gardasil 9', 2, 180, 0.5, 2.0, 8.0, 1095, 1),
+('Pneumococcal', 'Pfizer', 'Prevnar 13', 1, NULL, 0.5, 2.0, 8.0, 730, 1),
+('Rotavirus', 'GSK', 'Rotarix', 2, 28, 1.5, 2.0, 8.0, 540, 1),
+('Chickenpox', 'Merck', 'Varivax', 2, 84, 0.5, -50.0, -15.0, 730, 1),
+('Typhoid', 'Sanofi', 'Typhim Vi', 1, NULL, 0.5, 2.0, 8.0, 365, 1),
+('Rabies', 'Sanofi', 'Imovax', 3, 7, 1.0, 2.0, 8.0, 365, 1),
+('Yellow Fever', 'Sanofi', 'Stamaril', 1, NULL, 0.5, 2.0, 8.0, 730, 1),
+('Cholera', 'Valneva', 'Dukoral', 2, 7, 3.0, 2.0, 8.0, 365, 1),
+('Shingles', 'GSK', 'Shingrix', 2, 60, 0.5, 2.0, 8.0, 730, 1),
+('DTaP', 'Sanofi', 'Infanrix', 3, 28, 0.5, 2.0, 8.0, 540, 1),
+('Polio', 'Sanofi', 'IPOL', 3, 28, 0.5, 2.0, 8.0, 365, 1),
+('BCG', 'SSI', 'BCG Vaccine SSI', 1, NULL, 0.1, 2.0, 8.0, 365, 1),
+('Meningitis B', 'GSK', 'Bexsero', 2, 56, 0.5, 2.0, 8.0, 730, 1),
+('Pertussis', 'GSK', 'Boostrix', 1, NULL, 0.5, 2.0, 8.0, 365, 1);
+
+-- This shows Vaccine batches received by each clinic
+INSERT INTO VaccineBatch (vaccine_id, clinic_id, batch_number, manufacture_date, expiry_date, quantity_received, quantity_remaining, received_date, storage_location) VALUES
+(1, 1, 'FLU-2024-001', '2024-01-01', '2025-01-01', 200, 150, '2024-01-15', 'Fridge 1, Shelf A'),
+(1, 2, 'FLU-2024-002', '2024-01-01', '2025-01-01', 150, 100, '2024-01-15', 'Fridge 1, Shelf A'),
+(2, 1, 'COV-2024-001', '2024-02-01', '2024-08-01', 100, 60, '2024-02-10', 'Freezer 1, Shelf A'),
+(2, 3, 'COV-2024-002', '2024-02-01', '2024-08-01', 100, 75, '2024-02-10', 'Freezer 1, Shelf A'),
+(3, 2, 'COV-2024-003', '2024-02-01', '2024-08-01', 100, 50, '2024-02-10', 'Freezer 2, Shelf A'),
+(4, 4, 'MMR-2024-001', '2024-01-15', '2026-01-15', 80, 60, '2024-02-01', 'Fridge 2, Shelf B'),
+(5, 5, 'HEP-2024-001', '2024-01-01', '2025-07-01', 100, 80, '2024-01-20', 'Fridge 1, Shelf B'),
+(6, 6, 'HEPA-2024-001', '2024-01-01', '2025-01-01', 80, 65, '2024-01-20', 'Fridge 2, Shelf A'),
+(7, 1, 'TET-2024-001', '2024-01-01', '2026-01-01', 120, 100, '2024-01-15', 'Fridge 1, Shelf C'),
+(8, 2, 'MEN-2024-001', '2024-01-01', '2025-01-01', 90, 70, '2024-01-15', 'Fridge 2, Shelf B'),
+(9, 3, 'HPV-2024-001', '2024-01-01', '2027-01-01', 60, 45, '2024-01-20', 'Fridge 1, Shelf A'),
+(10, 4, 'PNE-2024-001', '2024-01-01', '2026-01-01', 100, 85, '2024-01-15', 'Fridge 1, Shelf B'),
+(11, 5, 'ROT-2024-001', '2024-01-01', '2025-07-01', 80, 60, '2024-01-20', 'Fridge 2, Shelf A'),
+(12, 6, 'CHK-2024-001', '2024-01-01', '2026-01-01', 70, 55, '2024-01-15', 'Freezer 1, Shelf B'),
+(17, 1, 'SHI-2024-001', '2024-01-01', '2026-01-01', 90, 75, '2024-01-15', 'Fridge 1, Shelf D'),
+(18, 2, 'DTA-2024-001', '2024-01-01', '2025-07-01', 100, 80, '2024-01-15', 'Fridge 2, Shelf C'),
+(19, 3, 'POL-2024-001', '2024-01-01', '2025-01-01', 80, 65, '2024-01-20', 'Fridge 1, Shelf B'),
+(20, 4, 'BCG-2024-001', '2024-01-01', '2025-01-01', 60, 50, '2024-01-15', 'Fridge 2, Shelf A'),
+(21, 5, 'MEB-2024-002', '2024-01-01', '2026-01-01', 80, 65, '2024-01-20', 'Fridge 1, Shelf C'),
+(22, 6, 'PER-2024-001', '2024-01-01', '2025-01-01', 90, 75, '2024-01-15', 'Fridge 2, Shelf B');
+
+INSERT INTO VaccineBatch (vaccine_id, clinic_id, batch_number, manufacture_date, expiry_date, quantity_received, quantity_remaining, received_date, storage_location) VALUES
+(13, 2, 'TYP-2024-001', '2024-01-01', '2025-07-01', 65, 60, '2024-01-15', 'Fridge 2, Shelf C'),
+(14, 5, 'RAB-2024-001', '2024-01-01', '2025-07-01', 80, 60, '2024-01-20', 'Fridge 2, Shelf A'),
+(15, 5, 'YEF-2024-001', '2024-01-01', '2025-07-01', 80, 60, '2024-01-20', 'Fridge 2, Shelf A'),
+(16, 6, 'CHO-2024-001', '2024-01-01', '2026-01-01', 70, 55, '2024-01-15', 'Freezer 1, Shelf B');
+
+-- 100+ patients registered across 6 clinics in Thurrock
+INSERT INTO Patient (primary_clinic_id, first_name, last_name, date_of_birth, gender, street, city, postcode, neighbourhood, email, phone_number, insurance_status, insurance_provider, registration_date, emergency_contact_name, emergency_contact_number) VALUES
+(1, 'Emma', 'Koffa', '1985-03-15', 'Female', '10 Cedar Road', 'South Ockendon', 'RM15 5RN', 'South Ockendon', 'e.koffa@gmail.com', '07509111717', 'Insured', 'BUPA', '2023-01-10', 'Tom Wilson', '07800200001'),
+(1, 'Liam', 'Johnson', '1990-07-22', 'Male', '25 Oak Street', 'South Ockendon', 'RM15 5CD', 'South Ockendon', 'l.johnson@gmail.com', '07800142822', 'Uninsured', NULL, '2023-01-11', 'Mary Johnson', '07800200002'),
+(1, 'Sophia', 'Brown', '1978-11-30', 'Female', '8 Elm Avenue', 'South Ockendon', 'RM15 5EF', 'South Ockendon', 's.brown@hotmail.com', '07800130001', 'Insured', 'AXA', '2023-01-12', 'Peter Brown', '07800200003'),
+(1, 'isaac', 'Newthing', '2000-05-18', 'Male', '34 Pine Lane', 'South Ockendon', 'RM15 5GH', 'South Ockendon', 'i.newthing@outlook.com', '07511138474', 'Not Disclosed', NULL, '2023-01-13', 'Jane Davis', '07800200004'),
+(1, 'Olivia', 'Taylor', '1995-09-25', 'Female', '12 Maple Close', 'South Ockendon', 'RM15 5IJ', 'South Ockendon', 'o.taylor@gmail.com', '07800100005', 'Insured', 'BUPA', '2023-01-14', 'Mark Taylor', '07800200005'),
+(1, 'William', 'Anderson', '1982-12-08', 'Male', '56 Birch Way', 'South Ockendon', 'RM15 5KL', 'South Ockendon', 'w.anderson@gmail.com', '07800100006', 'Uninsured', NULL, '2023-01-15', 'Sue Anderson', '07800200006'),
+(1, 'Isabella', 'Martinez', '1970-04-14', 'Female', '78 Ash Road', 'South Ockendon', 'RM15 5MN', 'South Ockendon', 'i.martinez@gmail.com', '07534091877', 'Insured', 'Vitality', '2023-01-16', 'Carlos Martinez', '07800200007'),
+(1, 'James', 'Thompson', '1955-08-27', 'Male', '23 Willow Street', 'South Ockendon', 'RM15 5OP', 'South Ockendon', 'j.thompson@gmail.com', '07800100008', 'Insured', 'AXA', '2023-01-17', 'Linda Thompson', '07800200008'),
+(2, 'Ava', 'White', '1988-02-19', 'Female', '45 Chestnut Drive', 'Purfleet', 'RM19 1AB', 'Purfleet', 'a.white@gmail.com', '07800100009', 'Uninsured', NULL, '2023-01-18', 'Bob White', '07800200009'),
+(2, 'Oliver', 'Harris', '1993-06-11', 'Male', '67 Hazel Close', 'Purfleet', 'RM19 1CD', 'Purfleet', 'o.harris@gmail.com', '07800100010', 'Insured', 'BUPA', '2023-01-19', 'Sara Harris', '07800200010'),
+(2, 'Mia', 'Clark', '1975-10-03', 'Female', '89 Sycamore Lane', 'Purfleet', 'RM19 1EF', 'Purfleet', 'm.clark@gmail.com', '07800100011', 'Not Disclosed', NULL, '2023-01-20', 'Alan Clark', '07800200011'),
+(2, 'Elijah', 'Lewis', '2001-03-28', 'Male', '12 Poplar Avenue', 'Purfleet', 'RM19 1GH', 'Purfleet', 'e.lewis@gmail.com', '07800100012', 'Insured', 'Vitality', '2023-01-21', 'Helen Lewis', '07800200012'),
+(2, 'Charlotte', 'Robinson', '1968-07-15', 'Female', '34 Beech Road', 'Purfleet', 'RM19 1IJ', 'Purfleet', 'c.robinson@gmail.com', '07800100013', 'Uninsured', NULL, '2023-01-22', 'Paul Robinson', '07800200013'),
+(2, 'Benjamin', 'Walker', '1997-11-22', 'Male', '56 Walnut Street', 'Purfleet', 'RM19 1KL', 'Purfleet', 'b.walker@gmail.com', '07800100014', 'Insured', 'AXA', '2023-01-23', 'Emma Walker', '07800200014'),
+(2, 'Amelia', 'Hall', '1983-05-09', 'Female', '78 Rowan Close', 'Purfleet', 'RM19 1MN', 'Purfleet', 'a.hall@gmail.com', '07800100015', 'Insured', 'BUPA', '2023-01-24', 'David Hall', '07800200015'),
+(3, 'Lucas', 'Young', '1991-09-16', 'Male', '23 Hornbeam Way', 'Grays', 'RM16 3AB', 'Orsett', 'l.young@gmail.com', '07800100016', 'Uninsured', NULL, '2023-01-25', 'Kate Young', '07800200016'),
+(3, 'Harper', 'King', '1979-01-04', 'Female', '45 Larch Drive', 'Grays', 'RM16 3CD', 'Orsett', 'h.king@gmail.com', '07800100017', 'Insured', 'Vitality', '2023-01-26', 'Mike King', '07800200017'),
+(3, 'Henry', 'Wright', '2003-04-21', 'Male', '67 Spruce Road', 'Grays', 'RM16 3EF', 'Orsett', 'h.wright@gmail.com', '07800100018', 'Not Disclosed', NULL, '2023-01-27', 'Anne Wright', '07800200018'),
+(3, 'Evelyn', 'Scott', '1965-08-13', 'Female', '89 Fir Lane', 'Grays', 'RM16 3GH', 'Orsett', 'e.scott@gmail.com', '07800100019', 'Insured', 'AXA', '2023-01-28', 'John Scott', '07800200019'),
+(3, 'Alexander', 'Green', '1987-12-30', 'Male', '12 Holly Avenue', 'Grays', 'RM16 3IJ', 'Orsett', 'a.green@gmail.com', '07800100020', 'Uninsured', NULL, '2023-01-29', 'Lisa Green', '07800200020'),
+(3, 'Abigail', 'Adams', '1994-03-17', 'Female', '34 Ivy Close', 'Grays', 'RM16 3KL', 'Orsett', 'a.adams@gmail.com', '07800100021', 'Insured', 'BUPA', '2023-01-30', 'Tom Adams', '07800200021'),
+(3, 'Mason', 'Baker', '1972-07-24', 'Male', '56 Juniper Street', 'Grays', 'RM16 3MN', 'Orsett', 'm.baker@gmail.com', '07800100022', 'Insured', 'Vitality', '2023-01-31', 'Sue Baker', '07800200022'),
+(4, 'Ella', 'Nelson', '1989-11-11', 'Female', '78 Magnolia Road', 'Grays', 'RM17 6AB', 'Thurrock', 'e.nelson@gmail.com', '07800100023', 'Not Disclosed', NULL, '2023-02-01', 'Rob Nelson', '07800200023'),
+(4, 'Ethan', 'Carter', '1996-02-28', 'Male', '23 Jasmine Way', 'Grays', 'RM17 6CD', 'Thurrock', 'e.carter@gmail.com', '07800100024', 'Insured', 'AXA', '2023-02-02', 'Fiona Carter', '07800200024'),
+(4, 'Scarlett', 'Mitchell', '1981-06-05', 'Female', '45 Lavender Drive', 'Grays', 'RM17 6EF', 'Thurrock', 's.mitchell@gmail.com', '07800100025', 'Uninsured', NULL, '2023-02-03', 'Neil Mitchell', '07800200025');
+
+INSERT INTO Patient (primary_clinic_id, first_name, last_name, date_of_birth, gender, street, city, postcode, neighbourhood, email, phone_number, insurance_status, insurance_provider, registration_date, emergency_contact_name, emergency_contact_number) VALUES
+(4, 'Daniel', 'Perez', '1973-09-12', 'Male', '67 Rose Avenue', 'Grays', 'RM17 6GH', 'Thurrock', 'd.perez@gmail.com', '07519470426', 'Insured', 'BUPA', '2023-02-04', 'Maria Perez', '07800200026'),
+(4, 'Grace', 'Roberts', '1998-01-19', 'Female', '89 Daisy Close', 'Grays', 'RM17 6IJ', 'Thurrock', 'g.roberts@gmail.com', '07500192227', 'Uninsured', NULL, '2023-02-05', 'Ian Roberts', '07800200027'),
+(4, 'Logan', 'Turner', '1986-05-26', 'Male', '12 Violet Lane', 'Grays', 'RM17 6KL', 'Thurrock', 'l.turner@gmail.com', '07801100028', 'Insured', 'Vitality', '2023-02-06', 'Pat Turner', '07800200028'),
+(4, 'Chloe', 'Phillips', '1963-10-03', 'Female', '34 Sunflower Road', 'Grays', 'RM17 6MN', 'Thurrock', 'c.phillips@gmail.com', '07800100029', 'Not Disclosed', NULL, '2023-02-07', 'Gary Phillips', '07800200029'),
+(4, 'Great', 'Campbell', '2002-02-10', 'Male', '56 Bluebell Way', 'Grays', 'RM17 6OP', 'Thurrock', 'g.campbell@gmail.com', '07800100030', 'Insured', 'AXA', '2023-02-08', 'Jean Campbell', '07800200030'),
+(5, 'Zoe', 'Parker', '1977-06-17', 'Female', '78 Tulip Drive', 'Grays', 'RM17 5AB', 'Grays', 'z.parker@gmail.com', '07800100031', 'Uninsured', NULL, '2023-02-09', 'Ray Parker', '07800200031'),
+(5, 'Jackson', 'Evans', '1992-10-24', 'Male', '23 Daffodil Street', 'Grays', 'RM17 5CD', 'Grays', 'j.evans@gmail.com', '07811100036', 'Insured', 'BUPA', '2023-02-10', 'Ann Evans', '07800200032'),
+(5, 'Lily', 'Edwards', '1984-03-01', 'Female', '45 Primrose Close', 'Grays', 'RM17 5EF', 'Grays', 'l.edwards@gmail.com', '07822145333', 'Insured', 'AXA', '2023-02-11', 'Tim Edwards', '07800200033'),
+(5, 'Aiden', 'Collins', '1969-07-08', 'Male', '67 Orchid Lane', 'Grays', 'RM17 5GH', 'Grays', 'a.collins@gmail.com', '07833100034', 'Not Disclosed', NULL, '2023-02-12', 'Bev Collins', '07800200034'),
+(5, 'Eleanor', 'Stewart', '1999-11-15', 'Female', '89 Poppy Road', 'Grays', 'RM17 5IJ', 'Grays', 'e.stewart@gmail.com', '07812010055', 'Insured', 'Vitality', '2023-02-13', 'Ken Stewart', '07800200035'),
+(5, 'Carter', 'Morris', '1980-04-22', 'Male', '12 Lily Avenue', 'Grays', 'RM17 5KL', 'Grays', 'c.morris@outlook.com', '07800100036', 'Uninsured', NULL, '2023-02-14', 'Dot Morris', '07800200036'),
+(5, 'Penelope', 'Rogers', '1974-08-29', 'Female', '34 Pansy Way', 'Grays', 'RM17 5MN', 'Grays', 'p.rogers@gmail.com', '07800100037', 'Insured', 'BUPA', '2023-02-15', 'Fred Rogers', '07800200037'),
+(6, 'Iren', 'Reed', '1988-01-05', 'Male', '56 Iris Drive', 'Tilbury', 'RM18 8AB', 'Tilbury', 'o.iren@gmail.com', '07800100038', 'Insured', 'AXA', '2023-02-16', 'Gail Reed', '07800200038'),
+(6, 'Layla', 'Cook', '1995-05-12', 'Female', '78 Snowdrop Close', 'Tilbury', 'RM18 8CD', 'Tilbury', 'l.cook@gmail.com', '07800100039', 'Uninsured', NULL, '2023-02-17', 'Harry Cook', '07800200039'),
+(6, 'Ryan', 'Morgan', '1971-09-19', 'Male', '23 Marigold Lane', 'Tilbury', 'RM18 8EF', 'Tilbury', 'r.morgan@gmail.com', '07800100040', 'Not Disclosed', NULL, '2023-02-18', 'Ivy Morgan', '07800200040'),
+(6, 'Mary', 'Bell', '2004-01-26', 'Female', '45 Foxglove Road', 'Tilbury', 'RM18 8GH', 'Tilbury', 'm.bell@gmail.com', '07800100041', 'Insured', 'Vitality', '2023-02-19', 'Jack Bell', '07800200041'),
+(6, 'Levi', 'Murphy', '1983-06-03', 'Male', '67 Buttercup Street', 'Tilbury', 'RM18 8IJ', 'Tilbury', 'l.murphy@gmail.com', '07800100042', 'Uninsured', NULL, '2023-02-20', 'Kay Murphy', '07800200042'),
+(6, 'Hannah', 'Bailey', '1976-10-10', 'Female', '89 Heather Way', 'Tilbury', 'RM18 8KL', 'Tilbury', 'h.bailey@gmail.com', '07800100043', 'Insured', 'BUPA', '2023-02-21', 'Lee Bailey', '07800200043'),
+(1, 'Caleb', 'Rivera', '1991-02-17', 'Male', '12 Clover Drive', 'South Ockendon', 'RM15 5QR', 'South Ockendon', 'c.rivera@gmail.com', '07800100044', 'Insured', 'AXA', '2023-02-22', 'May Rivera', '07800200044'),
+(1, 'Stella', 'Cooper', '1967-06-24', 'Female', '34 Thistle Close', 'South Ockendon', 'RM15 5ST', 'South Ockendon', 's.cooper@gmail.com', '07800100045', 'Not Disclosed', NULL, '2023-02-23', 'Ned Cooper', '07800200045'),
+(2, 'Miles', 'Richardson', '2005-10-31', 'Male', '56 Fern Lane', 'Purfleet', 'RM19 1OP', 'Purfleet', 'm.richardson@gmail.com', '07800100046', 'Uninsured', NULL, '2023-02-24', 'Ora Richardson', '07800200046'),
+(2, 'Aurora', 'Cox', '1980-03-08', 'Female', '78 Bracken Road', 'Purfleet', 'RM19 1QR', 'Purfleet', 'a.cox@gmail.com', '07800100047', 'Insured', 'BUPA', '2023-02-25', 'Pat Cox', '07800200047'),
+(3, 'Ezra', 'Howard', '1993-07-15', 'Male', '23 Heather Street', 'Grays', 'RM16 3OP', 'Orsett', 'e.howard@gmail.com', '0759100048', 'Insured', 'Vitality', '2023-02-26', 'Quin Howard', '07800200048'),
+(4, 'Violet', 'Ward', '1986-11-22', 'Female', '45 Gorse Way', 'Grays', 'RM17 6QR', 'Thurrock', 'v.ward@gmail.com', '07800100049', 'Insured', 'AXA', '2023-02-27', 'Rex Ward', '07800200049'),
+(5, 'Leo', 'Torres', '1978-04-01', 'Male', '67 Sedge Drive', 'Grays', 'RM17 5OP', 'Grays', 'l.torres@gmail.com', '07800103455', 'Uninsured', NULL, '2023-02-28', 'Sue Torres', '07800200050');
+
+INSERT INTO Patient (primary_clinic_id, first_name, last_name, date_of_birth, gender, street, city, postcode, neighbourhood, email, phone_number, insurance_status, insurance_provider, registration_date, emergency_contact_name, emergency_contact_number) VALUES
+(6, 'Ada', 'Coker', '1990-03-05', 'Female', '12 Acorn Lane', 'Tilbury', 'RM18 8MN', 'Tilbury', 'a.coker@gmail.com', '07853105551', 'Insured', 'BUPA', '2023-03-01', 'Ben Price', '07800200051'),
+(6, 'Finn', 'Bennett', '1985-07-12', 'Male', '34 Chestnut Road', 'Tilbury', 'RM18 8OP', 'Tilbury', 'f.bennett@gmail.com', '07800100052', 'Uninsured', NULL, '2023-03-02', 'Carol Bennett', '07800200052'),
+(1, 'Randy', 'Wood', '1973-11-19', 'Female', '56 Walnut Way', 'South Ockendon', 'RM15 5UV', 'South Ockendon', 'r.wood@gmail.com', '07891100053', 'Insured', 'AXA', '2023-03-03', 'Dan Wood', '07800200053'),
+(1, 'Oscar', 'Barnes', '1998-04-26', 'Male', '78 Hazel Close', 'South Ockendon', 'RM15 5WX', 'South Ockendon', 'o.barnes@gmail.com', '07831091541', 'Not Disclosed', NULL, '2023-03-04', 'Eve Barnes', '07800200054'),
+(2, 'Isla', 'Ross', '1966-08-03', 'Female', '23 Linden Street', 'Purfleet', 'RM19 1ST', 'Purfleet', 'i.ross@gmail.com', '07800100055', 'Insured', 'Vitality', '2023-03-05', 'Frank Ross', '07800200055'),
+(2, 'Hugo', 'Henderson', '1994-12-10', 'Male', '45 Alder Drive', 'Purfleet', 'RM19 1UV', 'Purfleet', 'h.henderson@gmail.com', '0785100056', 'Uninsured', NULL, '2023-03-06', 'Greta Henderson', '07800200056'),
+(3, 'Freya', 'Coleman', '1981-04-17', 'Female', '67 Cypress Road', 'Grays', 'RM16 3QR', 'Orsett', 'f.coleman@gmail.com', '07510100057', 'Insured', 'BUPA', '2023-03-07', 'Harry Coleman', '07800200057'),
+(3, 'Theo', 'Jenkins', '1976-08-24', 'Male', '89 Redwood Lane', 'Grays', 'RM16 3ST', 'Orsett', 't.jenkins@gmail.com', '07800100058', 'Insured', 'AXA', '2023-03-08', 'Irene Jenkins', '07800200058'),
+(4, 'Iris', 'Perry', '2002-01-01', 'Female', '12 Sequoia Way', 'Grays', 'RM17 6ST', 'Thurrock', 'i.perry@gmail.com', '07800100059', 'Not Disclosed', NULL, '2023-03-09', 'Jack Perry', '07800200059'),
+(4, 'Jude', 'Powell', '1987-05-08', 'Male', '34 Yew Avenue', 'Grays', 'RM17 6UV', 'Thurrock', 'j.powell@gmail.com', '07800100060', 'Insured', 'Vitality', '2023-03-10', 'Karen Powell', '07800200060'),
+(5, 'Ivy', 'Long', '1979-09-15', 'Female', '56 Cedar Close', 'Grays', 'RM17 5QR', 'Grays', 'i.long@gmail.com', '07800100061', 'Uninsured', NULL, '2023-03-11', 'Len Long', '07800200061'),
+(5, 'Rory', 'Patterson', '1992-01-22', 'Male', '78 Beech Street', 'Grays', 'RM17 5ST', 'Grays', 'r.patterson@gmail.com', '07800100062', 'Insured', 'BUPA', '2023-03-12', 'Meg Patterson', '07800200062'),
+(6, 'Phoebe', 'Hughes', '1984-05-29', 'Female', '23 Elm Drive', 'Tilbury', 'RM18 8QR', 'Tilbury', 'p.hughes@gmail.com', '07800100063', 'Insured', 'AXA', '2023-03-13', 'Ned Hughes', '07800200063'),
+(6, 'Rex', 'Flores', '1971-10-06', 'Male', '45 Oak Road', 'Tilbury', 'RM18 8ST', 'Tilbury', 'r.flores@gmail.com', '07800100064', 'Not Disclosed', NULL, '2023-03-14', 'Ora Flores', '07800200064'),
+(1, 'Sage', 'Washington', '1996-02-13', 'Female', '67 Pine Way', 'South Ockendon', 'RM15 5YZ', 'South Ockendon', 's.washington@gmail.com', '07800100065', 'Insured', 'Vitality', '2023-03-15', 'Paul Washington', '07800200065'),
+(2, 'Beau', 'Butler', '1968-06-20', 'Male', '89 Maple Close', 'Purfleet', 'RM19 1WX', 'Purfleet', 'b.butler@gmail.com', '07800100066', 'Uninsured', NULL, '2023-03-16', 'Quinn Butler', '07800200066'),
+(3, 'Nova', 'Simmons', '1983-10-27', 'Female', '12 Birch Lane', 'Grays', 'RM16 3UV', 'Orsett', 'n.simmons@gmail.com', '07800100067', 'Insured', 'BUPA', '2023-03-17', 'Rick Simmons', '07800200067'),
+(4, 'Zara', 'Foster', '1975-03-05', 'Female', '34 Ash Street', 'Grays', 'RM17 6WX', 'Thurrock', 'z.foster@gmail.com', '07840105068', 'Insured', 'AXA', '2023-03-18', 'Sam Foster', '07800200068'),
+(5, 'Eli', 'Gonzalez', '1988-07-12', 'Male', '56 Willow Road', 'Grays', 'RM17 5UV', 'Grays', 'e.gonzalez@gmail.com', '078601610069', 'Not Disclosed', NULL, '2023-03-19', 'Tina Gonzalez', '07800200069'),
+(6, 'Luna', 'Bryant', '2001-11-19', 'Female', '78 Sycamore Drive', 'Tilbury', 'RM18 8UV', 'Tilbury', 'l.bryant@gmail.com', '07822100070', 'Insured', 'Vitality', '2023-03-20', 'Uma Bryant', '07800200070'),
+(1, 'Jasper', 'Alexander', '1993-04-26', 'Male', '23 Poplar Way', 'South Ockendon', 'RM15 6AB', 'South Ockendon', 'j.alexander@gmail.com', '07800100071', 'Uninsured', NULL, '2023-03-21', 'Vera Alexander', '07800200071'),
+(2, 'Wren', 'Russell', '1970-08-03', 'Female', '45 Hornbeam Close', 'Purfleet', 'RM19 1YZ', 'Purfleet', 'w.russell@gmail.com', '07800100072', 'Insured', 'BUPA', '2023-03-22', 'Walt Russell', '07800200072'),
+(3, 'Axel', 'Griffin', '1997-12-10', 'Male', '67 Larch Road', 'Grays', 'RM16 3WX', 'Orsett', 'a.griffin@gmail.com', '07800100073', 'Insured', 'AXA', '2023-03-23', 'Xena Griffin', '07800200073'),
+(4, 'Skye', 'Diaz', '1982-04-17', 'Female', '89 Spruce Street', 'Grays', 'RM17 6YZ', 'Thurrock', 's.diaz@gmail.com', '07800100074', 'Not Disclosed', NULL, '2023-03-24', 'Yves Diaz', '07800200074'),
+(5, 'Blake', 'Hayes', '1977-08-24', 'Male', '12 Fir Lane', 'Grays', 'RM17 5WX', 'Grays', 'b.hayes@gmail.com', '0784110475', 'Insured', 'Vitality', '2023-03-25', 'Zoe Hayes', '07800200075');
+
+INSERT INTO Patient (primary_clinic_id, first_name, last_name, date_of_birth, gender, street, city, postcode, neighbourhood, email, phone_number, insurance_status, insurance_provider, registration_date, emergency_contact_name, emergency_contact_number) VALUES
+(6, 'Willow', 'Turner', '1995-02-14', 'Female', '12 Maplewood Close', 'Tilbury', 'RM18 8VW', 'Tilbury', 'w.turner@gmail.com', '07800100076', 'Insured', 'BUPA', '2023-03-26', 'Adam Turner', '07800200076'),
+(1, 'Felix', 'Reed', '1980-06-09', 'Male', '34 Rosewood Avenue', 'South Ockendon', 'RM15 6CD', 'South Ockendon', 'f.reed@gmail.com', '07800100077', 'Uninsured', NULL, '2023-03-27', 'Beth Reed', '07800200077'),
+(2, 'Aria', 'Cole', '1999-09-23', 'Female', '56 Ivy Lane', 'Purfleet', 'RM19 1AB', 'Purfleet', 'a.cole@gmail.com', '07800100078', 'Not Disclosed', NULL, '2023-03-28', 'Cody Cole', '07800200078'),
+(3, 'Leo', 'Bishop', '1978-01-30', 'Male', '78 Bramble Way', 'Grays', 'RM16 3YZ', 'Orsett', 'l.bishop@gmail.com', '07800100079', 'Insured', 'AXA', '2023-03-29', 'Dana Bishop', '07800200079'),
+(4, 'Ruby', 'Marsh', '1991-11-05', 'Female', '23 Thistle Road', 'Grays', 'RM17 6AB', 'Thurrock', 'r.marsh@gmail.com', '07800100080', 'Insured', 'Vitality', '2023-03-30', 'Evan Marsh', '07800200080'),
+(5, 'Max', 'Fox', '1969-03-18', 'Male', '45 Juniper Street', 'Grays', 'RM17 5YZ', 'Grays', 'm.fox@gmail.com', '07800100081', 'Uninsured', NULL, '2023-03-31', 'Faye Fox', '07800200081'),
+(6, 'Poppy', 'Sharp', '2000-07-22', 'Female', '67 Magnolia Drive', 'Tilbury', 'RM18 8WX', 'Tilbury', 'p.sharp@gmail.com', '07800100082', 'Insured', 'BUPA', '2023-04-01', 'Gwen Sharp', '07800200082'),
+(1, 'Arthur', 'Knight', '1974-12-11', 'Male', '89 Laurel Close', 'South Ockendon', 'RM15 6EF', 'South Ockendon', 'a.knight@gmail.com', '07800100083', 'Not Disclosed', NULL, '2023-04-02', 'Hank Knight', '07800200083'),
+(2, 'Daisy', 'Stone', '1986-04-04', 'Female', '12 Hawthorn Lane', 'Purfleet', 'RM19 1CD', 'Purfleet', 'd.stone@gmail.com', '07800100084', 'Insured', 'AXA', '2023-04-03', 'Iris Stone', '07800200084'),
+(3, 'Oliver', 'Frost', '1996-08-16', 'Male', '34 Blossom Way', 'Grays', 'RM16 3AB', 'Orsett', 'o.frost@gmail.com', '07800100085', 'Insured', 'Vitality', '2023-04-04', 'Joel Frost', '07800200085'),
+(4, 'Grace', 'Vale', '1972-10-28', 'Female', '56 Fernway', 'Grays', 'RM17 6CD', 'Thurrock', 'g.vale@gmail.com', '07800100086', 'Uninsured', NULL, '2023-04-05', 'Kim Vale', '07800200086'),
+(5, 'Henry', 'Wells', '1989-02-09', 'Male', '78 Heather Road', 'Grays', 'RM17 5AB', 'Grays', 'h.wells@gmail.com', '07800100087', 'Insured', 'BUPA', '2023-04-06', 'Liam Wells', '07800200087'),
+(6, 'Ella', 'Hunt', '2003-05-31', 'Female', '23 Clover Street', 'Tilbury', 'RM18 8YZ', 'Tilbury', 'e.hunt@gmail.com', '07800100088', 'Not Disclosed', NULL, '2023-04-07', 'Mona Hunt', '07800200088'),
+(1, 'George', 'Pike', '1967-09-13', 'Male', '45 Meadow Close', 'South Ockendon', 'RM15 6GH', 'South Ockendon', 'g.pike@gmail.com', '07800100089', 'Insured', 'AXA', '2023-04-08', 'Nico Pike', '07800200089'),
+(2, 'Mia', 'Doyle', '1993-01-27', 'Female', '67 Orchard Drive', 'Purfleet', 'RM19 1EF', 'Purfleet', 'm.doyle@gmail.com', '07800100090', 'Insured', 'Vitality', '2023-04-09', 'Owen Doyle', '07800200090'),
+(3, 'Jack', 'Nash', '1979-06-19', 'Male', '89 Primrose Lane', 'Grays', 'RM16 3CD', 'Orsett', 'j.nash@gmail.com', '07800100091', 'Uninsured', NULL, '2023-04-10', 'Pia Nash', '07800200091'),
+(4, 'Lily', 'Rowe', '1985-11-02', 'Female', '12 Bracken Way', 'Grays', 'RM17 6EF', 'Thurrock', 'l.rowe@gmail.com', '07800100092', 'Insured', 'BUPA', '2023-04-11', 'Quinn Rowe', '07800200092'),
+(5, 'Noah', 'Chase', '1997-03-24', 'Male', '34 Sorrel Road', 'Grays', 'RM17 5CD', 'Grays', 'n.chase@gmail.com', '07800100093', 'Not Disclosed', NULL, '2023-04-12', 'Reid Chase', '07800200093'),
+(6, 'Chloe', 'Lane', '1971-08-07', 'Female', '56 Foxglove Close', 'Tilbury', 'RM18 8AB', 'Tilbury', 'c.lane@gmail.com', '07800100094', 'Insured', 'AXA', '2023-04-13', 'Sara Lane', '07800200094'),
+(1, 'Charlie', 'Webb', '1990-12-15', 'Male', '78 Bluebell Street', 'South Ockendon', 'RM15 6IJ', 'South Ockendon', 'c.webb@gmail.com', '07800100095', 'Insured', 'Vitality', '2023-04-14', 'Todd Webb', '07800200095'),
+(2, 'Amelia', 'Grant', '1976-04-29', 'Female', '23 Buttercup Lane', 'Purfleet', 'RM19 1GH', 'Purfleet', 'a.grant@gmail.com', '07800100096', 'Uninsured', NULL, '2023-04-15', 'Uma Grant', '07800200096'),
+(3, 'Thomas', 'Shaw', '2004-10-03', 'Male', '45 Daffodil Drive', 'Grays', 'RM16 3EF', 'Orsett', 't.shaw@gmail.com', '07800100097', 'Insured', 'BUPA', '2023-04-16', 'Val Shaw', '07800200097'),
+(4, 'Sophie', 'Kent', '1982-07-21', 'Female', '67 Marigold Way', 'Grays', 'RM17 6GH', 'Thurrock', 's.kent@gmail.com', '07800100098', 'Not Disclosed', NULL, '2023-04-17', 'Wade Kent', '07800200098'),
+(5, 'William', 'Vance', '1968-02-25', 'Male', '89 Tulip Close', 'Grays', 'RM17 5EF', 'Grays', 'w.vance@gmail.com', '07800100099', 'Insured', 'AXA', '2023-04-18', 'Xander Vance', '07800200099'),
+(6, 'Emily', 'Cross', '1994-05-10', 'Female', '12 Rosemary Road', 'Tilbury', 'RM18 8CD', 'Tilbury', 'e.cross@gmail.com', '07800100100', 'Insured', 'Vitality', '2023-04-19', 'Yara Cross', '07800200100');
+
+
+--30 Appointments
+INSERT INTO Appointment (patient_id, clinic_id, vaccine_id, worker_id, appointment_date, appointment_time, appointment_status, note) VALUES
+(1, 1, 5, 2, '2023-05-02', '09:00:00', 'Completed', 'Routine flu shot'),
+(9, 2, 12, 3, '2023-05-02', '10:30:00', 'Completed', NULL),
+(16, 3, 1, 5, '2023-05-03', '11:00:00', 'Scheduled', NULL),
+(23, 4, 7, 8, '2023-05-03', '14:00:00', 'No-show', 'Patient did not arrive'),
+(31, 5, 22, 11, '2023-05-04', '09:15:00', 'Completed', NULL),
+(38, 6, 3, 14, '2023-05-04', '13:45:00', 'Cancelled', 'Patient rescheduled'),
+(45, 1, 9, 13, '2023-05-05', '08:30:00', 'Scheduled', NULL),
+(52, 6, 18, 15, '2023-05-05', '10:00:00', 'Completed', NULL),
+(59, 4, 2, 7, '2023-05-06', '09:00:00', 'Scheduled', NULL),
+(66, 2, 14, 4, '2023-05-06', '15:30:00', 'Completed', NULL),
+(73, 3, 20, 6, '2023-05-07', '11:15:00', 'No-show', NULL),
+(10, 1, 4, 1, '2023-05-07', '16:00:00', 'Completed', 'Walk-in, patient traveling for work'),
+(90, 2, 16, 1, '2023-05-08', '09:30:00', 'Scheduled', NULL),
+(97, 3, 6, 4, '2023-05-08', '13:00:00', 'Completed', NULL),
+(84, 5, 11, 9, '2023-05-09', '10:45:00', 'Cancelled', 'Walk-in cancelled — vaccine out of stock');
+INSERT INTO Appointment (patient_id, clinic_id, vaccine_id, worker_id, appointment_date, appointment_time, appointment_status, note) VALUES
+(2, 1, 8, 2, '2023-05-10', '09:00:00', 'Completed', NULL),
+(11, 2, 13, 4, '2023-05-10', '11:30:00', 'Scheduled', NULL),
+(18, 3, 17, 5, '2023-05-11', '10:00:00', 'Completed', NULL),
+(25, 4, 10, 9, '2023-05-11', '13:30:00', 'No-show', NULL),
+(33, 5, 21, 10, '2023-05-12', '09:45:00', 'Scheduled', NULL),
+(40, 6, 15, 12, '2023-05-12', '14:15:00', 'Completed', NULL),
+(47, 1, 7, 13, '2023-05-13', '08:00:00', 'Cancelled', 'Patient felt unwell, rescheduling'),
+(54, 6, 19, 14, '2023-05-13', '10:30:00', 'Completed', NULL),
+(61, 4, 4, 8, '2023-05-14', '09:00:00', 'Scheduled', NULL),
+(68, 2, 2, 3, '2023-05-14', '15:00:00', 'Completed', 'Second dose of COVID vaccine'),
+(75, 5, 6, 15, '2023-05-15', '11:00:00', 'No-show', NULL),
+(80, 4, 9, 7, '2023-05-15', '13:00:00', 'Scheduled', NULL),
+(88, 6, 1, 13, '2023-05-16', '09:30:00', 'Completed', NULL),
+(95, 3, 12, 6, '2023-05-16', '12:45:00', 'Cancelled', 'Clinic rescheduled due to staff shortage'),
+(3, 2, 5, 1, '2023-05-17', '10:15:00', 'Completed', 'Walk-in, insured patient traveling through');
+
+--Vaccination batches
+INSERT INTO VaccineBatch (vaccine_id, clinic_id, batch_number, manufacture_date, expiry_date, quantity_received, quantity_remaining, received_date, storage_location) VALUES
+(1, 1, 'FLU-2024-001', '2024-01-01', '2025-01-01', 200, 150, '2024-01-15', 'Fridge 1, Shelf A'),
+(1, 2, 'FLU-2024-002', '2024-01-01', '2025-01-01', 150, 100, '2024-01-15', 'Fridge 1, Shelf A'),
+(2, 1, 'COV-2024-001', '2024-02-01', '2024-08-01', 100, 60, '2024-02-10', 'Freezer 1, Shelf A'),
+(2, 3, 'COV-2024-002', '2024-02-01', '2024-08-01', 100, 75, '2024-02-10', 'Freezer 1, Shelf A'),
+(3, 2, 'COV-2024-003', '2024-02-01', '2024-08-01', 100, 50, '2024-02-10', 'Freezer 2, Shelf A'),
+(4, 4, 'MMR-2024-001', '2024-01-15', '2026-01-15', 80, 60, '2024-02-01', 'Fridge 2, Shelf B'),
+(5, 5, 'HEP-2024-001', '2024-01-01', '2025-07-01', 100, 80, '2024-01-20', 'Fridge 1, Shelf B'),
+(6, 6, 'HEPA-2024-001', '2024-01-01', '2025-01-01', 80, 65, '2024-01-20', 'Fridge 2, Shelf A'),
+(7, 1, 'TET-2024-001', '2024-01-01', '2026-01-01', 120, 100, '2024-01-15', 'Fridge 1, Shelf C'),
+(8, 2, 'MEN-2024-001', '2024-01-01', '2025-01-01', 90, 70, '2024-01-15', 'Fridge 2, Shelf B'),
+(9, 3, 'HPV-2024-001', '2024-01-01', '2027-01-01', 60, 45, '2024-01-20', 'Fridge 1, Shelf A'),
+(10, 4, 'PNE-2024-001', '2024-01-01', '2026-01-01', 100, 85, '2024-01-15', 'Fridge 1, Shelf B'),
+(11, 5, 'ROT-2024-001', '2024-01-01', '2025-07-01', 80, 60, '2024-01-20', 'Fridge 2, Shelf A'),
+(12, 6, 'CHK-2024-001', '2024-01-01', '2026-01-01', 70, 55, '2024-01-15', 'Freezer 1, Shelf B'),
+(17, 1, 'SHI-2024-001', '2024-01-01', '2026-01-01', 90, 75, '2024-01-15', 'Fridge 1, Shelf D'),
+(18, 2, 'DTA-2024-001', '2024-01-01', '2025-07-01', 100, 80, '2024-01-15', 'Fridge 2, Shelf C'),
+(19, 3, 'POL-2024-001', '2024-01-01', '2025-01-01', 80, 65, '2024-01-20', 'Fridge 1, Shelf B'),
+(20, 4, 'BCG-2024-001', '2024-01-01', '2025-01-01', 60, 50, '2024-01-15', 'Fridge 2, Shelf A'),
+(21, 5, 'MEB-2024-002', '2024-01-01', '2026-01-01', 80, 65, '2024-01-20', 'Fridge 1, Shelf C'),
+(22, 6, 'PER-2024-001', '2024-01-01', '2025-01-01', 90, 75, '2024-01-15', 'Fridge 2, Shelf B'),
+(13, 2, 'TYP-2024-001', '2024-01-01', '2025-07-01', 65, 60, '2024-01-15', 'Fridge 2, Shelf C'),
+(14, 5, 'RAB-2024-001', '2024-01-01', '2025-07-01', 80, 60, '2024-01-20', 'Fridge 2, Shelf A'),
+(15, 5, 'YEF-2024-001', '2024-01-01', '2025-07-01', 80, 60, '2024-01-20', 'Fridge 2, Shelf A'),
+(16, 6, 'CHO-2024-001', '2024-01-01', '2026-01-01', 70, 55, '2024-01-15', 'Freezer 1, Shelf B');
+-- 80 VaccinationRecord entries
+-- VaccinationRecord entries (40 rows total), using batch_ids 1-24
+INSERT INTO VaccinationRecord (patient_id, vaccine_id, batch_id, worker_id, clinic_id, appointment_id, administered_date, administered_time, dose_number, site_of_injection, adverse_reaction, next_dose_due) VALUES
+(4, 1, 1, 2, 1, NULL, '2024-02-01', '09:15:00', 1, 'Left arm', NULL, NULL),
+(12, 1, 2, 3, 2, NULL, '2024-02-05', '10:00:00', 1, 'Right arm', NULL, NULL),
+(20, 2, 3, 13, 1, NULL, '2024-03-01', '11:30:00', 1, 'Left arm', NULL, '2024-03-22'),
+(20, 2, 3, 13, 1, NULL, '2024-03-22', '11:00:00', 2, 'Right arm', NULL, NULL),
+(35, 2, 4, 5, 3, NULL, '2024-03-10', '09:00:00', 1, 'Left thigh', NULL, NULL),
+(42, 3, 5, 4, 2, NULL, '2024-03-15', '13:15:00', 1, 'Left arm', NULL, '2024-04-12'),
+(42, 3, 5, 4, 2, NULL, '2024-04-12', '13:00:00', 2, 'Right arm', NULL, NULL),
+(50, 4, 6, 8, 4, NULL, '2024-03-01', '10:45:00', 1, 'Right thigh', NULL, '2024-03-29'),
+(50, 4, 6, 9, 4, NULL, '2024-03-29', '10:30:00', 2, 'Left thigh', 'Mild soreness at injection site', NULL),
+(60, 5, 7, 10, 5, NULL, '2024-02-15', '09:30:00', 1, 'Left arm', NULL, '2024-03-16'),
+(60, 5, 7, 11, 5, NULL, '2024-03-16', '09:00:00', 2, 'Right arm', NULL, '2024-04-15'),
+(60, 5, 7, 9, 5, NULL, '2024-04-15', '14:00:00', 3, 'Left arm', NULL, NULL),
+(70, 6, 8, 12, 6, NULL, '2024-02-20', '11:00:00', 1, 'Right arm', NULL, NULL),
+(5, 7, 9, 1, 1, NULL, '2024-02-10', '08:45:00', 1, 'Left arm', NULL, NULL),
+(15, 8, 10, 1, 2, NULL, '2024-02-18', '10:15:00', 1, 'Right arm', NULL, NULL),
+(25, 9, 11, 6, 3, NULL, '2024-02-25', '09:45:00', 1, 'Left thigh', NULL, '2024-08-24'),
+(55, 10, 12, 7, 4, NULL, '2024-03-05', '10:00:00', 1, 'Right thigh', NULL, NULL),
+(65, 11, 13, 15, 5, NULL, '2024-02-28', '11:15:00', 1, 'Left arm', NULL, '2024-03-27'),
+(80, 12, 14, 14, 6, NULL, '2024-03-08', '09:00:00', 1, 'Right arm', NULL, '2024-05-31'),
+(8, 17, 15, 2, 1, NULL, '2024-03-12', '10:30:00', 1, 'Left arm', NULL, '2024-05-11'),
+(6, 13, 21, 3, 2, NULL, '2024-03-20', '09:00:00', 1, 'Left arm', NULL, NULL),
+(14, 14, 22, 10, 5, NULL, '2024-03-01', '10:00:00', 1, 'Right arm', NULL, '2024-03-08'),
+(14, 14, 22, 11, 5, NULL, '2024-03-08', '10:15:00', 2, 'Left arm', NULL, '2024-03-15'),
+(14, 14, 22, 9, 5, NULL, '2024-03-15', '10:30:00', 3, 'Right arm', NULL, NULL),
+(22, 15, 23, 15, 5, NULL, '2024-03-25', '11:00:00', 1, 'Left thigh', NULL, NULL),
+(30, 16, 24, 12, 6, NULL, '2024-03-05', '09:15:00', 1, 'Right thigh', NULL, '2024-03-12'),
+(30, 16, 24, 13, 6, NULL, '2024-03-12', '09:30:00', 2, 'Left arm', 'Mild nausea reported', NULL),
+(37, 1, 1, 2, 1, NULL, '2024-04-01', '08:30:00', 1, 'Right arm', NULL, NULL),
+(44, 1, 2, 4, 2, NULL, '2024-04-02', '09:00:00', 1, 'Left arm', NULL, NULL),
+(51, 7, 9, 13, 1, NULL, '2024-04-03', '10:00:00', 1, 'Right thigh', NULL, NULL),
+(58, 8, 10, 1, 2, NULL, '2024-04-04', '11:30:00', 1, 'Left arm', NULL, NULL),
+(63, 9, 11, 5, 3, NULL, '2024-04-05', '09:45:00', 1, 'Right arm', NULL, '2024-10-02'),
+(63, 9, 11, 6, 3, NULL, '2024-10-02', '09:30:00', 2, 'Left thigh', NULL, NULL),
+(71, 10, 12, 8, 4, NULL, '2024-04-06', '10:15:00', 1, 'Right thigh', NULL, NULL),
+(78, 11, 13, 9, 5, NULL, '2024-04-07', '13:00:00', 1, 'Left arm', NULL, '2024-05-05'),
+(78, 11, 13, 11, 5, NULL, '2024-05-05', '13:15:00', 2, 'Right arm', NULL, NULL),
+(85, 12, 14, 14, 6, NULL, '2024-04-08', '09:00:00', 1, 'Left thigh', NULL, '2024-07-01'),
+(85, 12, 14, 12, 6, NULL, '2024-07-01', '09:15:00', 2, 'Right thigh', NULL, NULL),
+(92, 17, 15, 1, 1, NULL, '2024-04-09', '10:45:00', 1, 'Left arm', NULL, '2024-06-08'),
+(99, 18, 16, 3, 2, NULL, '2024-04-10', '11:00:00', 1, 'Right arm', NULL, NULL);
+
+-- Third and fourth batch of VaccinationRecord entries (40 rows), bringing total to 80
+INSERT INTO VaccinationRecord (patient_id, vaccine_id, batch_id, worker_id, clinic_id, appointment_id, administered_date, administered_time, dose_number, site_of_injection, adverse_reaction, next_dose_due) VALUES
+(2, 17, 15, 2, 1, NULL, '2024-05-01', '09:00:00', 1, 'Left arm', NULL, '2024-06-30'),
+(2, 17, 15, 13, 1, NULL, '2024-06-30', '09:15:00', 2, 'Right arm', NULL, NULL),
+(9, 18, 16, 3, 2, NULL, '2024-05-02', '10:00:00', 1, 'Left thigh', NULL, '2024-05-30'),
+(9, 18, 16, 4, 2, NULL, '2024-05-30', '10:15:00', 2, 'Right thigh', NULL, '2024-06-27'),
+(9, 18, 16, 1, 2, NULL, '2024-06-27', '10:30:00', 3, 'Left arm', NULL, NULL),
+(17, 19, 17, 5, 3, NULL, '2024-05-03', '11:00:00', 1, 'Right arm', NULL, '2024-05-31'),
+(17, 19, 17, 6, 3, NULL, '2024-05-31', '11:15:00', 2, 'Left arm', NULL, '2024-06-28'),
+(17, 19, 17, 4, 3, NULL, '2024-06-28', '11:30:00', 3, 'Right arm', NULL, NULL),
+(24, 20, 18, 8, 4, NULL, '2024-05-04', '09:45:00', 1, 'Left thigh', NULL, NULL),
+(31, 21, 19, 10, 5, NULL, '2024-05-05', '13:00:00', 1, 'Right thigh', NULL, '2024-06-30'),
+(31, 21, 19, 11, 5, NULL, '2024-06-30', '13:15:00', 2, 'Left thigh', NULL, NULL),
+(38, 22, 20, 14, 6, NULL, '2024-05-06', '09:00:00', 1, 'Right arm', NULL, NULL),
+(45, 1, 1, 2, 1, NULL, '2024-05-07', '08:30:00', 1, 'Left arm', NULL, NULL),
+(52, 1, 2, 3, 2, NULL, '2024-05-08', '09:00:00', 1, 'Right arm', NULL, NULL),
+(59, 2, 3, 13, 1, NULL, '2024-05-09', '10:00:00', 1, 'Left arm', NULL, '2024-05-30'),
+(59, 2, 3, 1, 1, NULL, '2024-05-30', '10:15:00', 2, 'Right arm', NULL, NULL),
+(66, 2, 4, 5, 3, NULL, '2024-05-10', '11:00:00', 1, 'Left thigh', NULL, '2024-05-31'),
+(66, 2, 4, 6, 3, NULL, '2024-05-31', '11:15:00', 2, 'Right thigh', NULL, NULL),
+(73, 3, 5, 4, 2, NULL, '2024-05-11', '13:30:00', 1, 'Left arm', NULL, '2024-06-08'),
+(73, 3, 5, 3, 2, NULL, '2024-06-08', '13:45:00', 2, 'Right arm', NULL, NULL),
+(10, 4, 6, 8, 4, NULL, '2024-05-12', '09:15:00', 1, 'Left thigh', NULL, '2024-06-09'),
+(10, 4, 6, 9, 4, NULL, '2024-06-09', '09:30:00', 2, 'Right thigh', 'Mild fever reported', NULL),
+(18, 5, 7, 10, 5, NULL, '2024-05-13', '10:00:00', 1, 'Left arm', NULL, '2024-06-12'),
+(18, 5, 7, 11, 5, NULL, '2024-06-12', '10:15:00', 2, 'Right arm', NULL, '2024-07-12'),
+(18, 5, 7, 9, 5, NULL, '2024-07-12', '10:30:00', 3, 'Left arm', NULL, NULL),
+(27, 6, 8, 12, 6, NULL, '2024-05-14', '11:00:00', 1, 'Right thigh', NULL, '2024-11-10'),
+(27, 6, 8, 13, 6, NULL, '2024-11-10', '11:15:00', 2, 'Left thigh', NULL, NULL),
+(34, 7, 9, 1, 1, NULL, '2024-05-15', '08:45:00', 1, 'Left arm', NULL, NULL),
+(41, 8, 10, 4, 2, NULL, '2024-05-16', '09:00:00', 1, 'Right arm', NULL, NULL),
+(48, 9, 11, 5, 3, NULL, '2024-05-17', '09:30:00', 1, 'Left thigh', NULL, '2024-11-13'),
+(48, 9, 11, 6, 3, NULL, '2024-11-13', '09:45:00', 2, 'Right thigh', NULL, NULL),
+(56, 10, 12, 7, 4, NULL, '2024-05-18', '10:00:00', 1, 'Left arm', NULL, NULL),
+(64, 11, 13, 9, 5, NULL, '2024-05-19', '10:30:00', 1, 'Right arm', NULL, '2024-06-16'),
+(64, 11, 13, 15, 5, NULL, '2024-06-16', '10:45:00', 2, 'Left arm', NULL, NULL),
+(72, 12, 14, 14, 6, NULL, '2024-05-20', '11:00:00', 1, 'Right thigh', NULL, '2024-08-12'),
+(72, 12, 14, 12, 6, NULL, '2024-08-12', '11:15:00', 2, 'Left thigh', NULL, NULL),
+(81, 13, 21, 1, 2, NULL, '2024-05-21', '09:00:00', 1, 'Left arm', NULL, NULL),
+(88, 14, 22, 10, 5, NULL, '2024-05-22', '13:00:00', 1, 'Right arm', NULL, '2024-05-29'),
+(88, 14, 22, 11, 5, NULL, '2024-05-29', '13:15:00', 2, 'Left arm', NULL, '2024-06-05'),
+(88, 14, 22, 9, 5, NULL, '2024-06-05', '13:30:00', 3, 'Right arm', NULL, NULL);</sql><sql name="SQL 3">--Query using JOIN accross 3+ table
+--Vaccination Inventory status per Clinic
+SELECT 
+    c.clinic_name,
+    v.vaccine_name,
+    vb.batch_number,
+    vb.quantity_received,
+    vb.quantity_remaining,
+    vb.expiry_date
+FROM VaccineBatch vb
+JOIN Vaccine v ON vb.vaccine_id = v.vaccine_id
+JOIN Clinic c ON vb.clinic_id = c.clinic_id
+ORDER BY c.clinic_name, vb.expiry_date;
+
+
+--Query 2: Full vaccination record per Patient
+SELECT 
+	p.first_name,
+	p.last_name,
+	v.vaccine_name,
+	c.clinic_name, 
+	hw.first_name,
+	hw.last_name,
+	vr.administered_date,
+	vr.dose_number
+FROM VaccinationRecord vr
+JOIN Patient p ON vr . patient_id = p. patient_id
+JOIN vaccine v ON vr. Vaccine_id = v.vaccine_id
+JOIN Clinic c ON vr.clinic_id = c.clinic_id
+JOIN HealthcareWorker hw ON vr.worker_id = hw.worker_id
+ORDER BY p.last_name, vr.administered_date;
+
+
+--Query using Subqueries
+--Subquery 1: patients with no VaccinationRecord
+SELECT 
+	p.patient_id,
+	p.first_name,
+	p.last_name,
+	p.neighbourhood,
+	p.insurance_status,
+	c.clinic_name
+FROM Patient p
+LEFT JOIN Clinic c ON c.clinic_id = p.primary_clinic_id
+WHERE p.patient_id NOT IN (SELECT DISTINCT patient_id FROM VaccinationRecord)
+ORDER BY p.neighbourhood, p.last_name;
+
+
+-- Subquery 2: workers above average vaccination count
+SELECT 
+    hw.first_name,
+    hw.last_name,
+    COUNT(vr.record_id) AS vaccinations_given
+FROM HealthcareWorker hw
+JOIN VaccinationRecord vr ON vr.worker_id = hw.worker_id
+GROUP BY hw.worker_id
+HAVING COUNT(vr.record_id) &gt; (
+    SELECT AVG(cnt) FROM (
+        SELECT COUNT(*) AS cnt FROM VaccinationRecord GROUP BY worker_id
+    )
+)
+ORDER BY vaccinations_given DESC;
+
+
+-- GROUP BY + HAVING: Clinics with fewer than 10 vaccinations administered
+SELECT c.clinic_name, c.neighbourhood, COUNT(vr.record_id) AS total
+FROM Clinic c
+LEFT JOIN VaccinationRecord vr ON vr.clinic_id = c.clinic_id
+GROUP BY c.clinic_id, c.clinic_name, c.neighbourhood
+HAVING COUNT(vr.record_id) &lt; 10
+ORDER BY total;
+
+
+-- GROUP BY + HAVING: Most administered vaccines per Clinic
+SELECT c.clinic_name, v.vaccine_name, v.manufacturer,
+       COUNT(vr.record_id) AS administered
+FROM VaccinationRecord vr
+JOIN Vaccine v ON v.vaccine_id = vr.vaccine_id
+JOIN Clinic  c ON c.clinic_id  = vr.clinic_id
+GROUP BY c.clinic_id, v.vaccine_id
+HAVING COUNT(vr.record_id) &gt; 5
+ORDER BY administered DESC;
+
+
+--sustainability(SDG 3): Vaccination Coverage rate per neighbourhood
+SELECT p.neighbourhood,
+       COUNT(DISTINCT p.patient_id)  AS registered,
+       COUNT(DISTINCT vr.patient_id) AS vaccinated,
+       ROUND(CAST(COUNT(DISTINCT vr.patient_id) AS REAL)
+             /COUNT(DISTINCT p.patient_id)*100,1) AS coverage_pct,
+       SUM(CASE WHEN p.insurance_status='Uninsured' THEN 1 ELSE 0 END) AS uninsured
+FROM Patient p
+LEFT JOIN VaccinationRecord vr ON vr.patient_id = p.patient_id
+GROUP BY p.neighbourhood ORDER BY  coverage_pct DESC;
+
+
+--Sustainability (SDG-3): Adverse Reaction Monitoring
+SELECT c.clinic_name, v.vaccine_name, COUNT(vr.record_id) AS doses,
+       SUM(CASE WHEN vr.adverse_reaction IS NOT NULL THEN 1 ELSE 0 END) AS events,
+       ROUND(CAST(SUM(CASE WHEN vr.adverse_reaction IS NOT NULL THEN 1 ELSE 0 END) AS REAL)
+             /COUNT(vr.record_id)*100,2) AS event_rate_pct
+FROM VaccinationRecord vr
+JOIN Vaccine v ON v.vaccine_id = vr.vaccine_id
+JOIN Clinic  c ON c.clinic_id  = vr.clinic_id
+GROUP BY c.clinic_id, v.vaccine_id
+HAVING COUNT(vr.record_id) &gt;= 2 AND events &gt; 0
+ORDER BY event_rate_pct DESC;
+
+--Indexes
+CREATE INDEX idx_vaccinationrecord_clinic ON VaccinationRecord(clinic_id);
+CREATE INDEX idx_vaccinationrecord_patient ON VaccinationRecord(patient_id);
+CREATE INDEX idx_vaccinationrecord_vaccine ON VaccinationRecord(vaccine_id);
+CREATE INDEX idx_vaccinationrecord_worker ON VaccinationRecord(worker_id);
+CREATE INDEX idx_vaccinebatch_clinic ON VaccineBatch(clinic_id);
+CREATE INDEX idx_vaccinebatch_vaccine ON VaccineBatch(vaccine_id);
+CREATE INDEX idx_patient_neighbourhood ON Patient(neighbourhood);
+CREATE INDEX idx_patient_primaryclinic ON Patient(primary_clinic_id);</sql><current_tab id="0"/></tab_sql></sqlb_project>
